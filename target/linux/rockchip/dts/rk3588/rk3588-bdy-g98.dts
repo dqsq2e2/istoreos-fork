@@ -22,6 +22,9 @@
 	/* Board-level source for the G98 iStoreOS 6.12 image. */
 	model = "BDY G98 NAS";
 	compatible = "bdy,g98-nas", "rockchip,rk3588";
+	/* Stable naming: first RTL8125 is WAN, second RTL8125 and both
+	 * YT9215 CPU conduits are LAN-side interfaces. */
+	eth_order = "0002:*1:00.0,0003:*1:00.0,fe1b0000.ethernet,fe1c0000.ethernet";
 
 	aliases {
 		/* Keep eMMC as mmc0; U-Boot and fnOS rely on this numbering. */
@@ -427,10 +430,7 @@
 			compatible = "pci10ec,8125";
 			reg = <0 0 0 0 0>;
 			label = "eth2";
-			r8125,led0 = <0x022b>;
-			r8125,led1 = <0x022b>;
-			r8125,led2 = <0x022b>;
-			r8125,led3 = <0x022b>;
+			realtek,led-data = <0x022b 0x022b 0x022b 0x022b>;
 		};
 	};
 };
@@ -454,10 +454,7 @@
 			compatible = "pci10ec,8125";
 			reg = <0 0 0 0 0>;
 			label = "eth1";
-			r8125,led0 = <0x022b>;
-			r8125,led1 = <0x022b>;
-			r8125,led2 = <0x022b>;
-			r8125,led3 = <0x022b>;
+			realtek,led-data = <0x022b 0x022b 0x022b 0x022b>;
 		};
 	};
 };
