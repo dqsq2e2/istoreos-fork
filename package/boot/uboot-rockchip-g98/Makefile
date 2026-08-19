@@ -74,8 +74,8 @@ define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	# The G98 board has only validated the original loader plus the v21 FIT.
 	# Do not silently replace that loader with a newly generated combined image.
-	$(STAGING_DIR_HOST)/bin/sha256sum $(TOPDIR)/package/boot/uboot-rockchip-g98/files/bdy-g98-istoreos-2024.10-idbloader.img | grep -q "$(G98_VERIFIED_IDBLOADER_SHA256)"
-	$(STAGING_DIR_HOST)/bin/sha256sum $(TOPDIR)/package/boot/uboot-rockchip-g98/files/BDY-G98-u-boot-2024.10-full-v21.itb | grep -q "$(G98_VERIFIED_ITB_SHA256)"
+	$(MKHASH) sha256 $(TOPDIR)/package/boot/uboot-rockchip-g98/files/bdy-g98-istoreos-2024.10-idbloader.img | grep -q "$(G98_VERIFIED_IDBLOADER_SHA256)"
+	$(MKHASH) sha256 $(TOPDIR)/package/boot/uboot-rockchip-g98/files/BDY-G98-u-boot-2024.10-full-v21.itb | grep -q "$(G98_VERIFIED_ITB_SHA256)"
 	$(CP) $(TOPDIR)/package/boot/uboot-rockchip-g98/files/bdy-g98-istoreos-2024.10-idbloader.img \
 		$(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-idbloader.img
 	$(CP) $(TOPDIR)/package/boot/uboot-rockchip-g98/files/BDY-G98-u-boot-2024.10-full-v21.itb \
