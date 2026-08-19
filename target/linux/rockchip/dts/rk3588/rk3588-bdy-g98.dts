@@ -24,7 +24,7 @@
 	compatible = "bdy,g98-nas", "rockchip,rk3588";
 	/* Stable naming: first RTL8125 is WAN, second RTL8125 and both
 	 * YT9215 CPU conduits are LAN-side interfaces. */
-	eth_order = "0002:*1:00.0,0003:*1:00.0,fe1b0000.ethernet,fe1c0000.ethernet";
+	eth_order = "0003:31:00.0,0002:21:00.0,fe1b0000.ethernet,fe1c0000.ethernet";
 
 	aliases {
 		/* Keep eMMC as mmc0; U-Boot and fnOS rely on this numbering. */

@@ -4627,10 +4627,38 @@ index 0000000000000000000000000000000000000000..563e763d9e0e8267e1aaf2978cb9f01b
 +	return DSA_TAG_PROTO_YT921X;
 +}
 +
++static void yt921x_bdy_g98_set_port_mac(struct dsa_switch *ds, int port)
++{
++	struct dsa_port *dp = dsa_to_port(ds, port);
++	struct net_device *conduit;
++	u8 port_id;
++
++	if (!of_property_read_bool(ds->dev->of_node,
++				   "motorcomm,bdy-g98-led-profile") ||
++		!dsa_port_is_user(dp) || port < 1 || port > 4 || !dp->cpu_dp)
++		return;
++
++	conduit = dp->cpu_dp->conduit;
++	if (!conduit || !is_valid_ether_addr(conduit->dev_addr))
++		return;
++
++	/* The two G98 switch trees contribute four globally unique IDs each. */
++	port_id = ((ds->dst->index & 0x3) << 2) | (port - 1);
++	ether_addr_copy(dp->mac, conduit->dev_addr);
++	dp->mac[0] = (dp->mac[0] | 0x02) & 0xfe;
++	dp->mac[4] ^= 0x80;
++	dp->mac[5] = (dp->mac[5] & 0xf0) | port_id;
++
++	dev_info(ds->dev, "port %d assigned MAC address %pM\n", port,
++		 dp->mac);
++}
++
 +static int yt921x_dsa_port_setup(struct dsa_switch *ds, int port)
 +{
 +	struct yt921x_priv *priv = to_yt921x_priv(ds);
 +	int res;
++
++	yt921x_bdy_g98_set_port_mac(ds, port);
 +
 +	mutex_lock(&priv->reg_lock);
 +	res = yt921x_port_setup(priv, port);

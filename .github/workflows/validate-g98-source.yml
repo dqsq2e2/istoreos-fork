@@ -1,0 +1,49 @@
+name: Validate G98 source
+
+on:
+  push:
+    branches: [istoreos-25.12]
+    paths:
+      - "configs/bdy-g98.config"
+      - "target/linux/rockchip/**"
+      - "package/kernel/r8125/**"
+      - ".github/workflows/validate-g98-source.yml"
+  pull_request:
+    paths:
+      - "configs/bdy-g98.config"
+      - "target/linux/rockchip/**"
+      - "package/kernel/r8125/**"
+      - ".github/workflows/validate-g98-source.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+
+          cfg=configs/bdy-g98.config
+          dts=target/linux/rockchip/dts/rk3588/rk3588-bdy-g98.dts
+          net=target/linux/rockchip/armv8/base-files/etc/board.d/02_network
+          yt=target/linux/rockchip/patches-6.12/994-Motorcomm-YT921x-driver-with-G98-profile.patch
+
+          grep -qx 'CONFIG_TARGET_rockchip_armv8_DEVICE_bdy_g98=y' "$cfg"
+          grep -qx 'CONFIG_PACKAGE_luci-mod-dashboard=y' "$cfg"
+          grep -qx 'CONFIG_PACKAGE_firewall4=y' "$cfg"
+          grep -qx 'CONFIG_PACKAGE_nftables=y' "$cfg"
+          grep -q 'eth_order = "0003:31:00.0,0002:21:00.0,fe1b0000.ethernet,fe1c0000.ethernet";' "$dts"
+          test "$(grep -c 'realtek,led-data' "$dts")" -eq 2
+          test "$(grep -c 'motorcomm,bdy-g98-led-profile' "$dts")" -eq 2
+          grep -q "ucidef_set_interfaces_lan_wan 'eth1 lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8' 'eth0'" "$net"
+          grep -q 'yt921x_bdy_g98_set_port_mac' "$yt"
+          grep -q 'port_id = ((ds->dst->index & 0x3) << 2) | (port - 1);' "$yt"
+          grep -q 'yt921x_bdy_g98_set_port_mac(ds, port);' "$yt"
+          grep -q 'u-boot-bdy-g98-rk3588-2410' target/linux/rockchip/image/legacy.mk
