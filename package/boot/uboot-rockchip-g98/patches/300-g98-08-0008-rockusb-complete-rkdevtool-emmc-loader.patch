@@ -1,0 +1,156 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Fri, 24 Jul 2026 01:20:00 +0800
+Subject: [PATCH] usb: gadget: complete RockUSB eMMC loader commands
+
+Mainline RockUSB advertises command 0x1a but routes it to the unsupported
+handler.  RKDevTool always issues READ_FLASH_INFO before allowing an image
+write, so a gadget which otherwise enumerates as Loader cannot be used for
+flashing.
+
+Return the legacy 11-byte eMMC geometry expected by Rockchip tools.  Also
+implement the capability query used by newer tools, advertising only direct
+LBA and first-4-MiB access, both of which this driver actually supports.
+
+The single IN request is idle when a response is submitted and has already
+been removed from the endpoint queue when a completion callback submits the
+next response.  Do not dequeue it in either case; DWC3 correctly reports
+that such a request was not queued and the needless operation obscures real
+USB errors.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ arch/arm/include/asm/arch-rockchip/f_rockusb.h |  1 +
+ drivers/usb/gadget/f_rockusb.c                 | 75 +++++++++++++++++--
+ 2 files changed, 70 insertions(+), 6 deletions(-)
+
+diff --git a/arch/arm/include/asm/arch-rockchip/f_rockusb.h b/arch/arm/include/asm/arch-rockchip/f_rockusb.h
+--- a/arch/arm/include/asm/arch-rockchip/f_rockusb.h
++++ b/arch/arm/include/asm/arch-rockchip/f_rockusb.h
+@@ -65,6 +65,7 @@ enum rkusb_command {
+ K_FW_SPI_WRITE_10 = 0x22,
+ K_FW_LBA_ERASE_10 = 0x25,
+ 
++K_FW_READ_CAPABILITY = 0xAA,
+ K_FW_SESSION = 0X30,
+ K_FW_RESET = 0xff,
+ };
+diff --git a/drivers/usb/gadget/f_rockusb.c b/drivers/usb/gadget/f_rockusb.c
+--- a/drivers/usb/gadget/f_rockusb.c
++++ b/drivers/usb/gadget/f_rockusb.c
+@@ -332,7 +332,6 @@ static int rockusb_tx_write(const char *buffer, unsigned int buffer_size)
+ 	memcpy(in_req->buf, buffer, buffer_size);
+ 	in_req->length = buffer_size;
+ 	debug("Transferring 0x%x bytes\n", buffer_size);
+-	usb_ep_dequeue(rockusb_func->in_ep, in_req);
+ 	ret = usb_ep_queue(rockusb_func->in_ep, in_req, 0);
+ 	if (ret)
+ 		printf("Error %d on queue\n", ret);
+@@ -478,7 +477,6 @@ static void tx_handler_ul_image(struct usb_ep *ep, struct usb_request *req)
+ 	in_req->length = transfer_size;
+ 	in_req->complete = tx_handler_ul_image;
+ 	debug("Uploading 0x%x bytes\n", transfer_size);
+-	usb_ep_dequeue(rockusb_func->in_ep, in_req);
+ 	ret = usb_ep_queue(rockusb_func->in_ep, in_req, 0);
+ 	if (ret)
+ 		printf("Error %d on queue\n", ret);
+@@ -573,6 +571,67 @@ static void cb_read_storage_id(struct usb_ep *ep, struct usb_request *req)
+ 	rockusb_tx_write_str(emmc_id);
+ }
+ 
++struct rk_flash_info {
++	__le32 flash_size;
++	__le16 block_size;
++	u8 page_size;
++	u8 ecc_bits;
++	u8 access_time;
++	u8 manufacturer;
++	u8 flash_mask;
++} __packed;
++
++static bool rockusb_set_blk_desc(struct f_rockusb *f_rkusb, u32 tag)
++{
++	if (!f_rkusb->desc)
++		f_rkusb->desc = blk_get_dev(f_rkusb->dev_type, f_rkusb->dev_index);
++
++	if (!f_rkusb->desc || f_rkusb->desc->type == DEV_TYPE_UNKNOWN) {
++		printf("invalid device \"%s\", %d\n", f_rkusb->dev_type,
++		       f_rkusb->dev_index);
++		rockusb_tx_write_csw(tag, 0, CSW_FAIL,
++				     USB_BULK_CS_WRAP_LEN);
++		return false;
++	}
++
++	return true;
++}
++
++static void cb_read_flash_info(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	struct rk_flash_info info = {
++		.block_size = cpu_to_le16(1024),
++		.page_size = 4,
++		.access_time = 40,
++	};
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++	f_rkusb->tag = cbw->tag;
++	if (!rockusb_set_blk_desc(f_rkusb, cbw->tag))
++		return;
++
++	info.flash_size = cpu_to_le32((u32)f_rkusb->desc->lba);
++	info.flash_mask = f_rkusb->desc->lba ? 1 : 0;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++	rockusb_tx_write((char *)&info, sizeof(info));
++}
++
++static void cb_read_capability(struct usb_ep *ep, struct usb_request *req)
++{
++	ALLOC_CACHE_ALIGN_BUFFER(struct fsg_bulk_cb_wrap, cbw,
++				 sizeof(struct fsg_bulk_cb_wrap));
++	struct f_rockusb *f_rkusb = get_rkusb();
++	u8 capability[8] = { 0x05 };
++
++	memcpy((char *)cbw, req->buf, USB_BULK_CB_WRAP_LEN);
++	f_rkusb->tag = cbw->tag;
++	f_rkusb->in_req->complete = tx_handler_send_csw;
++	rockusb_tx_write((char *)capability, sizeof(capability));
++}
++
+ int __weak rk_get_bootrom_chip_version(unsigned int *chip_info, int size)
+ {
+ 	return 0;
+@@ -851,7 +912,7 @@ static const struct cmd_dispatch_info cmd_dispatch_info[] = {
+ 	},
+ 	{
+ 		.cmd = K_FW_READ_FLASH_INFO,
+-		.cb = cb_not_support,
++		.cb = cb_read_flash_info,
+ 	},
+ 	{
+ 		.cmd = K_FW_GET_CHIP_VER,
+@@ -877,6 +938,10 @@ static const struct cmd_dispatch_info cmd_dispatch_info[] = {
+ 		.cmd = K_FW_LBA_ERASE_10,
+ 		.cb = cb_erase_lba,
+ 	},
++	{
++		.cmd = K_FW_READ_CAPABILITY,
++		.cb = cb_read_capability,
++	},
+ 	{
+ 		.cmd = K_FW_SESSION,
+ 		.cb = cb_not_support,
+@@ -912,8 +977,8 @@ static void rx_handler_command(struct usb_ep *ep, struct usb_request *req)
+ 	}
+ 
+ 	if (!func_cb) {
+-		printf("unknown command: %s\n", (char *)req->buf);
+-		rockusb_tx_write_str("FAILunknown command");
++		printf("unknown Rockusb command: 0x%02x\n", cbw->CDB[0]);
++		rockusb_tx_write_csw(cbw->tag, 0, CSW_FAIL, USB_BULK_CS_WRAP_LEN);
+ 	} else {
+ 		if (req->actual < req->length) {
+ 			u8 *buf = (u8 *)req->buf;
+-- 
+2.43.0

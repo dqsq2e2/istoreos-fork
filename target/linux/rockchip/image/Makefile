@@ -3,7 +3,7 @@
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/image.mk
 
-DEVICE_VARS += UBOOT_DEVICE_NAME
+DEVICE_VARS += UBOOT_DEVICE_NAME G98_KERNEL_PARTSIZE
 
 define Build/Compile
 	(cd ../dts/rk3588 && ./check.sh)
@@ -44,6 +44,22 @@ define Build/pine64-img
 
 	# Copy the u-boot-rockchip.bin to the image at sector 0x40
 	dd if="$(STAGING_DIR_IMAGE)"/$(UBOOT_DEVICE_NAME)-u-boot-rockchip.bin of="$@" seek=64 conv=notrunc
+endef
+
+define Build/g98-img
+	# G98 uses the hardware-verified iStoreOS loader at sector 0x40 and
+	# the hardware-verified U-Boot 2024.10 v21 FIT at sector 0x4000.
+	# Keep the 16 MiB partition offset required by the Rockchip boot flow.
+	SIGNATURE="$(IMG_PART_SIGNATURE)" \
+	PARTOFFSET=16M \
+	$(SCRIPT_DIR)/gen_image_generic.sh \
+		$@ \
+		$(if $(G98_KERNEL_PARTSIZE),$(G98_KERNEL_PARTSIZE),$(CONFIG_TARGET_KERNEL_PARTSIZE)) $@.boot \
+		$(CONFIG_TARGET_ROOTFS_PARTSIZE) $(IMAGE_ROOTFS) \
+		1024
+
+	dd if="$(STAGING_DIR_IMAGE)"/$(UBOOT_DEVICE_NAME)-idbloader.img of="$@" seek=64 conv=notrunc
+	dd if="$(STAGING_DIR_IMAGE)"/$(UBOOT_DEVICE_NAME)-u-boot.itb of="$@" seek=16384 conv=notrunc
 endef
 
 ### Legacy Image scripts ###

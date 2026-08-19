@@ -1,0 +1,28 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Thu, 23 Jul 2026 16:10:00 +0800
+Subject: [PATCH] rockchip: rockusb: enumerate as a loader device
+
+Rockchip's vendor U-Boot uses bcdUSB 0x0201 for the RockUSB gadget so
+RKDevTool identifies the running firmware as Loader rather than Maskrom.
+Keep the standard USB 2.0 value for all other download functions.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ arch/arm/mach-rockchip/board.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/arch/arm/mach-rockchip/board.c b/arch/arm/mach-rockchip/board.c
+--- a/arch/arm/mach-rockchip/board.c
++++ b/arch/arm/mach-rockchip/board.c
+@@ -229,6 +229,9 @@
+ 
+ int g_dnl_bind_fixup(struct usb_device_descriptor *dev, const char *name)
+ {
++	if (!strcmp(name, "usb_dnl_rockusb"))
++		dev->bcdUSB = cpu_to_le16(0x0201);
++
+ 	if (!strcmp(name, "usb_dnl_ums"))
+ 		put_unaligned(ROCKCHIP_G_DNL_UMS_PRODUCT_NUM, &dev->idProduct);
+ 	else
+-- 
+2.43.0

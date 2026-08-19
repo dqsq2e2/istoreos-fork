@@ -184,7 +184,7 @@ endef
 define U-Boot/easepi-rk3528
   $(U-Boot/rk3528/Default)
   NAME:=Easepi RK3528
-  DEFAULT:=y
+  DEFAULT:=y if !TARGET_rockchip_armv8_DEVICE_bdy_g98 && !TARGET_DEVICE_rockchip_armv8_DEVICE_bdy_g98
 endef
 
 define U-Boot/hinlink-h28k-rk3528
@@ -260,13 +260,13 @@ endef
 define U-Boot/easepi-rk3568
   $(U-Boot/rk3568/Default)
   NAME:=Easepi RK3568
-  DEFAULT:=y
+  DEFAULT:=y if !TARGET_rockchip_armv8_DEVICE_bdy_g98 && !TARGET_DEVICE_rockchip_armv8_DEVICE_bdy_g98
 endef
 
 define U-Boot/easepi-rk3568-rk809
   $(U-Boot/rk3568/Default)
   NAME:=Easepi RK3568 with RK809
-  DEFAULT:=y
+  DEFAULT:=y if !TARGET_rockchip_armv8_DEVICE_bdy_g98 && !TARGET_DEVICE_rockchip_armv8_DEVICE_bdy_g98
 endef
 
 define U-Boot/bpi-r2-pro-rk3568
@@ -342,7 +342,7 @@ endef
 define U-Boot/generic-rk3576
   $(U-Boot/rk3576/Default)
   NAME:=Generic RK3576
-  DEFAULT:=y
+  DEFAULT:=y if !TARGET_rockchip_armv8_DEVICE_bdy_g98 && !TARGET_DEVICE_rockchip_armv8_DEVICE_bdy_g98
 endef
 
 define U-Boot/rock-4d-rk3576
@@ -367,7 +367,7 @@ endef
 define U-Boot/easepi-rk3588
   $(U-Boot/rk358x/Default)
   NAME:=Easepi RK3588
-  DEFAULT:=y
+  DEFAULT:=y if !TARGET_rockchip_armv8_DEVICE_bdy_g98 && !TARGET_DEVICE_rockchip_armv8_DEVICE_bdy_g98
 endef
 
 define U-Boot/easepi-rk3588-lp4-1866

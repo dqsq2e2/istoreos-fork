@@ -1,0 +1,31 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Thu, 23 Jul 2026 16:35:00 +0800
+Subject: [PATCH] usb: gadget: preserve RockUSB loader descriptor version
+
+The RockUSB binding sets bcdUSB to 0x0201 so RKDevTool identifies it as
+a Loader.  The composite GET_DESCRIPTOR path subsequently overwrites every
+High-Speed gadget to 0x0200, making the same running U-Boot appear as
+Maskrom.  Retain 0x0201 only for the RockUSB download function.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ drivers/usb/gadget/composite.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/composite.c b/drivers/usb/gadget/composite.c
+--- a/drivers/usb/gadget/composite.c
++++ b/drivers/usb/gadget/composite.c
+@@ -1050,7 +1050,10 @@ static int composite_setup(struct usb_gadget *gadget,
+ 			if (gadget->speed >= USB_SPEED_SUPER) {
+ 				cdev->desc.bcdUSB = cpu_to_le16(0x0310);
+ 				cdev->desc.bMaxPacketSize0 = 9;
+-			} else {
++			} else if (!strcmp(cdev->driver->name, "usb_dnl_rockusb")) {
++				/* Rockchip tools use bcdUSB bit 0 to identify Loader. */
++				cdev->desc.bcdUSB = cpu_to_le16(0x0201);
++			} else {
+ 				cdev->desc.bcdUSB = cpu_to_le16(0x0200);
+ 			}
+ 			value = min(w_length, (u16) sizeof cdev->desc);
+-- 
+2.43.0

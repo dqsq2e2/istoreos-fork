@@ -224,6 +224,24 @@ $(call Device/Legacy/rk3588,$(1))
 endef
 TARGET_DEVICES += easepi_r2
 
+define Device/bdy_g98
+$(call Device/Legacy/rk3588,$(1))
+  DEVICE_VENDOR := BDY
+  DEVICE_MODEL := G98
+  SUPPORTED_DEVICES += bdy,bdy-g98 bdy,g98-nas
+  DEVICE_DTS := rk3588/rk3588-bdy-g98
+  UBOOT_DEVICE_NAME := bdy-g98-rk3588-2410
+  BOOT_SCRIPT := g98
+  # The RK3588 kernel+DTB is larger than the legacy 16 MiB default.
+  G98_KERNEL_PARTSIZE := 64
+  # 2410 means the verified U-Boot 2024.10 package.  The image rule writes
+  # the preserved loader and verified v21 FIT separately; it does not use a
+  # newly generated combined u-boot-rockchip.bin.
+  IMAGE/sysupgrade.img.gz = boot-common-legacy | boot-script-legacy $$(BOOT_SCRIPT) | g98-img | gzip | append-metadata
+  DEVICE_PACKAGES += u-boot-bdy-g98-rk3588-2410 kmod-dsa kmod-tag-yt921x kmod-yt921x kmod-phy-motorcomm kmod-r8125-rss kmod-nvme kmod-ata-ahci-dwc kmod-drm-rockchip uhttpd uhttpd-mod-ubus
+endef
+TARGET_DEVICES += bdy_g98
+
 define Device/friendlyarm_nanopi-r6s
 $(call Device/Legacy/rk3588s,$(1))
   DEVICE_VENDOR := FriendlyARM

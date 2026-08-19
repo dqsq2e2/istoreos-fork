@@ -190,6 +190,15 @@ define Package/base-files/install
 	else \
 		true; \
 	fi
+	# These scripts are called from preinit before any board-specific network setup.
+	# Install and verify them explicitly so a partial base-files package fails early.
+	$(INSTALL_DIR) $(1)/bin
+	$(INSTALL_BIN) ./files/bin/board_detect $(1)/bin/board_detect
+	$(INSTALL_BIN) ./files/bin/config_generate $(1)/bin/config_generate
+	$(INSTALL_BIN) ./files/bin/ipcalc.sh $(1)/bin/ipcalc.sh
+	test -x $(1)/bin/board_detect
+	test -x $(1)/bin/config_generate
+	test -x $(1)/bin/ipcalc.sh
 
 	$(VERSION_SED_SCRIPT) \
 		$(1)/etc/banner \

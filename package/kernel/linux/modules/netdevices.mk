@@ -653,6 +653,38 @@ endef
 $(eval $(call KernelPackage,dsa))
 
 
+define KernelPackage/tag-yt921x
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Motorcomm YT921x DSA tag driver
+  DEPENDS:=+kmod-dsa
+  KCONFIG:=CONFIG_NET_DSA_TAG_YT921X
+  FILES:=$(LINUX_DIR)/net/dsa/tag_yt921x.ko
+  AUTOLOAD:=$(call AutoProbe,tag_yt921x)
+endef
+
+define KernelPackage/tag-yt921x/description
+  DSA tag protocol support for Motorcomm YT921x switches
+endef
+
+$(eval $(call KernelPackage,tag-yt921x))
+
+
+define KernelPackage/yt921x
+  SUBMENU:=$(NETWORK_DEVICES_MENU)
+  TITLE:=Motorcomm YT921x DSA switch support
+  DEPENDS:=+kmod-dsa +kmod-tag-yt921x +kmod-phy-motorcomm
+  KCONFIG:=CONFIG_NET_DSA_YT921X
+  FILES:=$(LINUX_DIR)/drivers/net/dsa/yt921x.ko
+  AUTOLOAD:=$(call AutoProbe,yt921x)
+endef
+
+define KernelPackage/yt921x/description
+  DSA switch driver for Motorcomm YT921x switches
+endef
+
+$(eval $(call KernelPackage,yt921x))
+
+
 define KernelPackage/dsa-notag
   SUBMENU:=$(NETWORK_DEVICES_MENU)
   TITLE:=DSA No-op tag driver

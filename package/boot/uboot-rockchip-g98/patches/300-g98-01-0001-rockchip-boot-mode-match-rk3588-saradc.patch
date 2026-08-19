@@ -1,0 +1,28 @@
+From 2cb2e6d3d4fd8a8e7f7c2c0f3f4d0b6f7a5b4c3d Mon Sep 17 00:00:00 2001
+From: BDY-G98 port <noreply@example.invalid>
+Date: Thu, 23 Jul 2026 14:00:00 +0800
+Subject: [PATCH] rockchip: boot-mode: match RK3588 SARADC by compatible
+
+Mainline RK3588 device trees use the schema-compliant node name
+adc@fec10000. The generic download-key check previously only accepted
+device names beginning with saradc, so it skipped the real ADC device and
+never sampled channel 1. Keep the legacy name fallback for older trees,
+but match the RK3588 SARADC compatible as the stable identity.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ arch/arm/mach-rockchip/boot_mode.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-rockchip/boot_mode.c b/arch/arm/mach-rockchip/boot_mode.c
+--- a/arch/arm/mach-rockchip/boot_mode.c
++++ b/arch/arm/mach-rockchip/boot_mode.c
+@@ -52,7 +52,8 @@ __weak int rockchip_dnl_key_pressed(void)
+ 	ret = -ENODEV;
+ 	uclass_foreach_dev(dev, uc) {
+-		if (!strncmp(dev->name, "saradc", 6)) {
++		if (device_is_compatible(dev, "rockchip,rk3588-saradc") ||
++		    !strncmp(dev->name, "saradc", 6)) {
+ 			ret = adc_channel_single_shot(dev->name, 1, &val);
+ 			break;
+		}

@@ -1,0 +1,45 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Thu, 23 Jul 2026 14:20:00 +0800
+Subject: [PATCH] rockchip: boot-mode: scale download key ADC threshold
+
+KEY_DOWN_MAX_VAL was calibrated for a 10-bit SARADC. RK3588 exposes a
+12-bit data mask, so the same electrical threshold is raw 120 instead of
+raw 30. Scale the threshold from the ADC data mask while retaining raw 30
+for existing 10-bit controllers.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ arch/arm/mach-rockchip/boot_mode.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/mach-rockchip/boot_mode.c b/arch/arm/mach-rockchip/boot_mode.c
+--- a/arch/arm/mach-rockchip/boot_mode.c
++++ b/arch/arm/mach-rockchip/boot_mode.c
+@@ -36,11 +36,13 @@ void set_back_to_bootrom_dnl_flag(void)
+  */
+ #define KEY_DOWN_MIN_VAL	0
+ #define KEY_DOWN_MAX_VAL	30
++#define KEY_DOWN_REF_MASK	0x3ff
+ 
+ __weak int rockchip_dnl_key_pressed(void)
+ {
+ #if CONFIG_IS_ENABLED(ADC)
+-	unsigned int val;
++	unsigned int val, data_mask;
++	unsigned int max_val = KEY_DOWN_MAX_VAL;
+ 	struct udevice *dev;
+ 	struct uclass *uc;
+ 	int ret;
+@@ -66,7 +68,11 @@ __weak int rockchip_dnl_key_pressed(void)
+ 		return false;
+ 	}
+ 
+-	if ((val >= KEY_DOWN_MIN_VAL) && (val <= KEY_DOWN_MAX_VAL))
++	if (!adc_data_mask(dev, &data_mask))
++		max_val = (KEY_DOWN_MAX_VAL * (data_mask + 1) +
++			   KEY_DOWN_REF_MASK) / (KEY_DOWN_REF_MASK + 1);
++
++	if ((val >= KEY_DOWN_MIN_VAL) && (val <= max_val))
+ 		return true;
+ 	else
+ 		return false;

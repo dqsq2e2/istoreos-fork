@@ -1,0 +1,32 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Thu, 23 Jul 2026 18:30:00 +0800
+Subject: [PATCH] usb: gadget: provide BOS for RockUSB Loader mode
+
+Rockchip tools distinguish Loader from Maskrom with bcdUSB bit zero.
+Reporting 0x0201 makes Windows request the USB 2.0 BOS capabilities before
+setting a configuration.  The composite core currently returns BOS only
+for a SuperSpeed connection, so High-Speed RockUSB fails enumeration.
+
+Use the existing BOS builder for RockUSB as well.  At High-Speed it emits
+the USB 2.0 extension capability without a SuperSpeed capability.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ drivers/usb/gadget/composite.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/usb/gadget/composite.c b/drivers/usb/gadget/composite.c
+--- a/drivers/usb/gadget/composite.c
++++ b/drivers/usb/gadget/composite.c
+@@ -1090,7 +1090,8 @@ static int composite_setup(struct usb_gadget *gadget,
+ 			 * also issues this request, return for now for
+ 			 * USB 2.0 connection.
+ 			 */
+-			if (gadget->speed >= USB_SPEED_SUPER) {
++			if (gadget->speed >= USB_SPEED_SUPER ||
++			    !strcmp(cdev->driver->name, "usb_dnl_rockusb")) {
+ 				value = bos_desc(cdev);
+ 				value = min(w_length, (u16)value);
+ 			}
+-- 
+2.43.0

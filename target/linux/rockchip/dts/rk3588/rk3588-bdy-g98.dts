@@ -1,0 +1,960 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include <dt-bindings/soc/rockchip,vop2.h>
+#include "dt-bindings/usb/pd.h"
+/*
+ * G98 uses the validated v27 board-specific RK3588 base.  It is intentionally
+ * kept separate from the generic upstream rk3588.dtsi used by other boards.
+ */
+#include "rk3588-bdy-g98-base.dtsi"
+
+#include "rk3588-rk806-single-g98.dtsi"
+//#include "rk3588s-ip.dtsi"
+//#include "rk3588s-ip-supply.dtsi"
+//#include "rk3588-ramoops.dtsi"
+
+/ {
+	/* Board-level source for the G98 iStoreOS 6.12 image. */
+	model = "BDY G98 NAS";
+	compatible = "bdy,g98-nas", "rockchip,rk3588";
+
+	aliases {
+		/* Keep eMMC as mmc0; U-Boot and fnOS rely on this numbering. */
+		mmc0 = &sdhci;
+		mmc1 = &sdmmc;
+		ethernet0 = &gmac0;
+		ethernet1 = &gmac1;
+	};
+
+	chosen {
+		stdout-path = "serial2:1500000n8";
+	};
+
+	/* Reuse the v18 ADC key node; only the G98 recovery key is exposed. */
+	adc-keys-0 {
+		io-channel-names = "buttons";
+		io-channels = <&saradc 1>;
+		keyup-threshold-microvolt = <0x1b7740>;
+		poll-interval = <0x64>;
+		status = "okay";
+		/delete-node/ button-maskrom;
+
+		recovery-key {
+			label = "F12";
+			linux,code = <0x58>;
+			press-threshold-microvolt = <0x6d6>;
+		};
+	};
+
+	/* 12 V board input (v18 regulator node). */
+	vcc12v_dcin: regulator-vcc12v-dcin {
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <12000000>;
+		regulator-max-microvolt = <12000000>;
+		regulator-name = "vcc12v_dcin";
+	};
+
+	/* 4 V rail feeding RK806 and the external RK8602 regulators. */
+	vcc4v0_sys: regulator-vcc4v0-sys {
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <4000000>;
+		regulator-max-microvolt = <4000000>;
+		regulator-name = "vcc4v0_sys";
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	/* 5 V system rail for USB and PCIe peripherals. */
+	vcc5v0_sys: regulator-vcc5v0-sys {
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-name = "vcc5v0_sys";
+		vin-supply = <&vcc12v_dcin>;
+	};
+
+	/* 1.1 V auxiliary rail. */
+	vcc_1v1_nldo_s3: regulator-vcc-1v1-nldo-s3 {
+		regulator-name = "vcc_1v1_nldo_s3";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <1100000>;
+		regulator-max-microvolt = <1100000>;
+		vin-supply = <&vcc4v0_sys>;
+	};
+
+	/* Shared 3.3 V rail used by the active PCIe root ports. */
+	vcc3v3_nvme: regulator-vcc3v3-pcie30 {
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-name = "vcc3v3_nvme";
+		vin-supply = <&vcc5v0_sys>;
+		enable-active-high;
+		gpios = <&gpio3 RK_PD5 GPIO_ACTIVE_HIGH>;
+		startup-delay-us = <7500>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&nvme_power_en>;
+	};
+
+	/* Unused PCIe2x1l2 rail; kept to preserve the board DT topology. */
+	vcc3v3_pcie20: regulator-vcc3v3-pcie20 {
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-name = "vcc_3v3_pcie20";
+		vin-supply = <&vcc_3v3_s3>;
+	};
+
+	/* Legacy per-port rail is disabled; active ports use vcc3v3_nvme. */
+	regulator-vcc3v3-pcie2x1l0 {
+		status = "disabled";
+		enable-active-high;
+		gpio = <&gpio4 RK_PC2 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&pcie2x1l0_power_en>;
+		regulator-name = "vcc3v3_pcie2x1l0";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/* 5 V rail for the USB host PHYs. */
+	vcc5v0_host_regulator: regulator-vbus5v0-usb {
+		enable-active-high;
+		gpio = <&gpio4 RK_PB0 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_host_en>;
+		regulator-name = "vbus5v0_usb";
+		regulator-boot-on;
+		regulator-always-on;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/* 5 V rail for the OTG connector. */
+	vcc5v0_otg_regulator: regulator-vbus5v0-typec {
+		enable-active-high;
+		gpio = <&gpio4 RK_PA7 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&vcc5v0_otg_en>;
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+		regulator-name = "vcc5v0_otg";
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	/* SD rail is retained even though the SD controller is disabled. */
+	regulator-vcc3v3-sd-s0 {
+		gpio = <&gpio4 RK_PA5 GPIO_ACTIVE_LOW>;
+		regulator-boot-on;
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-name = "vcc3v3_sd_s0";
+		vin-supply = <&vcc_3v3_s3>;
+	};
+
+	/* Unpopulated 4G power rail retained from the board DT. */
+	regulator-vdd-4g-3v3 {
+		enable-active-high;
+		gpio = <&gpio4 RK_PC6 GPIO_ACTIVE_HIGH>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&g98_4g_power_en>;
+		regulator-name = "vdd_4g_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		vin-supply = <&vcc5v0_sys>;
+	};
+
+	hdmi0-con {
+		compatible = "hdmi-connector";
+		type = "a";
+
+		port {
+			hdmi0_con_in: endpoint {
+				remote-endpoint = <&hdmi0_out_con>;
+			};
+		};
+	};
+
+	leds {
+		status = "okay";
+		/delete-node/ led-0;
+
+		system-led {
+			default-state = "on";
+			gpios = <&gpio3 RK_PB7 GPIO_ACTIVE_HIGH>;
+			label = "system-led";
+			linux,default-trigger = "default-on";
+		};
+
+		hdd-led {
+			default-state = "off";
+			gpios = <&gpio3 RK_PC1 GPIO_ACTIVE_HIGH>;
+			label = "hdd-led";
+			linux,default-trigger = "disk-activity";
+		};
+	};
+};
+
+/* v18 removed the stale HDMI1 connector from the base tree. */
+/ {
+	/delete-node/ hdmi1-con;
+	/delete-node/ ir-receiver;
+};
+
+/* Media status is pinned to the v18 production tree. */
+&{/npu@fdab0000} {
+	status = "okay";
+};
+
+&{/npu@fdac0000} {
+	status = "disabled";
+};
+
+&{/npu@fdad0000} {
+	status = "disabled";
+};
+
+&{/mpp-srv} {
+	status = "okay";
+};
+
+&{/vepu@fdb50000} {
+	status = "disabled";
+};
+
+&{/vdpu@fdb50400} {
+	status = "okay";
+};
+
+&{/avsd-plus@fdb51000} {
+	status = "disabled";
+};
+
+&{/rga@fdb60000} {
+	status = "okay";
+};
+
+&{/rga@fdb70000} {
+	status = "okay";
+};
+
+&{/rga@fdb80000} {
+	status = "okay";
+};
+
+/* ===== CPU Power ===== */
+
+&cpu_l0 {
+	cpu-supply = <&vdd_cpu_lit_s0>;
+};
+
+&cpu_l1 {
+	cpu-supply = <&vdd_cpu_lit_s0>;
+};
+
+&cpu_l2 {
+	cpu-supply = <&vdd_cpu_lit_s0>;
+};
+
+&cpu_l3 {
+	cpu-supply = <&vdd_cpu_lit_s0>;
+};
+
+&cpu_b0 {
+	cpu-supply = <&vdd_cpu_big0_s0>;
+};
+
+&cpu_b1 {
+	cpu-supply = <&vdd_cpu_big0_s0>;
+};
+
+&cpu_b2 {
+	cpu-supply = <&vdd_cpu_big1_s0>;
+};
+
+&cpu_b3 {
+	cpu-supply = <&vdd_cpu_big1_s0>;
+};
+
+&i2c0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c0m2_xfer>;
+	status = "okay";
+
+	vdd_cpu_big0_s0: regulator@42 {
+		compatible = "rockchip,rk8602";
+		reg = <0x42>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "vdd_cpu_big0_s0";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <550000>;
+		regulator-max-microvolt = <1050000>;
+		regulator-ramp-delay = <2300>;
+		vin-supply = <&vcc5v0_sys>;
+
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
+	vdd_cpu_big1_s0: regulator@43 {
+		compatible = "rockchip,rk8603", "rockchip,rk8602";
+		reg = <0x43>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "vdd_cpu_big1_s0";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-min-microvolt = <550000>;
+		regulator-max-microvolt = <1050000>;
+		regulator-ramp-delay = <2300>;
+		vin-supply = <&vcc5v0_sys>;
+
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+};
+
+/* ===== I2C / RTC ===== */
+
+// i2c@fea90000
+&i2c1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c1m0_xfer>;
+	status = "disabled";
+};
+
+// i2c2: i2c@feaa0000
+&i2c2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2m0_xfer>;
+	status = "okay";
+
+	vdd_npu_s0: vdd_npu_mem_s0: regulator@42 {
+		compatible = "rockchip,rk8602";
+		reg = <0x42>;
+		fcs,suspend-voltage-selector = <1>;
+		regulator-name = "vdd_npu_s0";
+		regulator-always-on;
+		regulator-boot-on;
+		regulator-enable-ramp-delay = <500>;
+		regulator-min-microvolt = <550000>;
+		regulator-max-microvolt = <950000>;
+		regulator-ramp-delay = <2300>;
+		vin-supply = <&vcc5v0_sys>;
+
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+};
+
+// i2c3: i2c@feab0000
+&i2c3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c3m0_xfer>;
+	status = "okay";
+};
+
+// i2c4: i2c@feac0000
+&i2c4 {
+	pinctrl-names = "default";
+	/* v18 production DTB uses the SoC i2c4m0 pin group. */
+	pinctrl-0 = <&i2c4m0_xfer>;
+	/* GPIO3_A5 is also GMAC1 RGMII clock; keep this unused bus disabled. */
+	status = "disabled";
+};
+
+// i2c6: i2c@fec80000
+&i2c6 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c6m0_xfer>;
+	status = "okay";
+};
+
+/* ===== PCIe ===== */
+
+// phy: phy@fee00000
+&combphy0_ps {
+	pinctrl-0 = <&sata0_pm_reset>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+// phy: phy@fee10000
+&combphy1_ps {
+	status = "okay";
+};
+
+// phy: phy@fee20000
+&combphy2_psu {
+	status = "okay";
+};
+
+// phy: phy@fee80000
+&pcie30phy {
+	data-lanes = <1 1 2 2>;
+	status = "okay";
+};
+
+// pcie2x1l0: pcie@fe170000
+&pcie2x1l0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie2_0_rst>;
+	supports-clkreq;
+	reset-gpios = <&gpio4 RK_PB4 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_nvme>;
+	status = "okay";
+
+	/* RTL8125 on PCI domain 2, bus 0x20. */
+	pcie@0,0 {
+		reg = <0x00200000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		pcie-eth@20,0 {
+			compatible = "pci10ec,8125";
+			reg = <0 0 0 0 0>;
+			label = "eth2";
+			r8125,led0 = <0x022b>;
+			r8125,led1 = <0x022b>;
+			r8125,led2 = <0x022b>;
+			r8125,led3 = <0x022b>;
+		};
+	};
+};
+
+// pcie2x1l1: pcie@fe180000
+&pcie2x1l1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie2_1_rst>;
+	supports-clkreq;
+	reset-gpios = <&gpio4 RK_PA2 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_nvme>;
+	status = "okay";
+
+	/* RTL8125 on PCI domain 3, bus 0x30. */
+	pcie@0,0 {
+		reg = <0x00300000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		pcie-eth@30,0 {
+			compatible = "pci10ec,8125";
+			reg = <0 0 0 0 0>;
+			label = "eth1";
+			r8125,led0 = <0x022b>;
+			r8125,led1 = <0x022b>;
+			r8125,led2 = <0x022b>;
+			r8125,led3 = <0x022b>;
+		};
+	};
+};
+
+// pcie2x1l2: pcie@fe190000
+&pcie2x1l2 {
+	vpcie3v3-supply = <&vcc3v3_pcie20>;
+	status = "disabled";
+
+	/* Legacy PCIe2x1l2 metadata; the whole controller remains disabled. */
+	pcie@0,0 {
+		reg = <0x00400000 0 0 0 0>;
+		#address-cells = <3>;
+		#size-cells = <2>;
+
+		pcie-eth@40,0 {
+			compatible = "pci10ec,8125";
+			reg = <0 0 0 0 0>;
+			label = "eth1";
+		};
+	};
+};
+
+// pcie3x2: pcie@fe160000
+&pcie3x2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie3x2_rst>;
+	num-lanes = <2>;
+	reset-gpios = <&gpio3 RK_PD4 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_nvme>;
+	status = "okay";
+};
+
+// pcie3x4: pcie@fe150000
+&pcie3x4 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie3x4_rst>;
+	num-lanes = <2>;
+	reset-gpios = <&gpio4 RK_PB6 GPIO_ACTIVE_HIGH>;
+	vpcie3v3-supply = <&vcc3v3_nvme>;
+	status = "okay";
+};
+
+/* ===== Pin Control ===== */
+
+&pinctrl {
+	/* The board has no IR receiver; remove the disabled placeholder too. */
+	/delete-node/ ir-receiver;
+
+	/* Helper used by the active SATA/combphy reset pin. */
+	pcfg_output_high: pcfg-output-high {
+		bias-disable;
+	output-high;
+	};
+
+	pcie {
+		pcie2_0_rst: pcie2-0-rst {
+			rockchip,pins = <4 RK_PB4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		pcie2_1_rst: pcie2-1-rst {
+			rockchip,pins = <4 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		pcie3x2_rst: pcie3x2-rst {
+			rockchip,pins = <3 RK_PD4 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		pcie3x4_rst: pcie3x4-rst {
+			rockchip,pins = <4 RK_PB6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		pcie2x1l0_power_en: pcie2x1l0-power-en {
+			rockchip,pins = <4 RK_PC2 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	cellular {
+		g98_4g_power_en: 4g-lte-pwren {
+			rockchip,pins = <4 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	nvme {
+		nvme_power_en: nvme-power-en {
+			rockchip,pins = <3 RK_PD5 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	usb {
+		vcc5v0_host_en: vcc5v0-host-en {
+			rockchip,pins = <4 RK_PB0 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+
+		vcc5v0_otg_en: vcc5v0-otg-en {
+			rockchip,pins = <4 RK_PA7 RK_FUNC_GPIO &pcfg_pull_none>;
+		};
+	};
+
+	sata {
+		sata0_pm_reset: sata0-pm-reset {
+			rockchip,pins = <0 RK_PD5 RK_FUNC_GPIO &pcfg_output_high>;
+		};
+	};
+};
+
+/* ===== Storage ===== */
+
+// sdhci: mmc@fe2e0000
+&sdhci {
+	/* The validated G98 DTB deliberately runs eMMC without CQE. */
+	/delete-property/ supports-cqe;
+	bus-width = <8>;
+	no-sdio;
+	no-sd;
+	supports-emmc;
+	non-removable;
+	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
+	mmc-hs400-enhanced-strobe;
+	status = "okay";
+};
+
+// sdmmc: mmc@fe2c0000
+&sdmmc {
+	status = "disabled";
+};
+
+// sdio: mmc@fe2d0000
+&sdio {
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-names;
+	status = "disabled";
+};
+
+/* ===== SATA ===== */
+
+// sata0: sata@fe210000
+&sata0 {
+	status = "okay";
+};
+
+/* The board has no bootable SPI-NOR path in the fnOS production image. */
+&sfc {
+	status = "disabled";
+};
+
+/* ===== Ethernet ===== */
+
+// gmac0: ethernet@fe1b0000
+&gmac0 {
+	clock_in_out = "output";
+	phy-mode = "rgmii-rxid";
+	tx_delay = <0x44>;
+	pinctrl-0 = <&gmac0_miim &gmac0_tx_bus2 &gmac0_rx_bus2 &gmac0_rgmii_clk &gmac0_rgmii_bus>;
+	pinctrl-names = "default";
+	snps,reset-active-low;
+	snps,reset-delays-us = <0x00 0x4e20 0x186a0>;
+	snps,reset-gpio = <&gpio3 RK_PD0 GPIO_ACTIVE_LOW>;
+	snps,no-vlhash;
+	snps,tso;
+	status = "okay";
+
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+		pause;
+	};
+};
+
+// gmac1: ethernet@fe1c0000
+&gmac1 {
+	clock_in_out = "output";
+	phy-mode = "rgmii-rxid";
+	tx_delay = <0x42>;
+	pinctrl-0 = <&gmac1_miim &gmac1_tx_bus2 &gmac1_rx_bus2 &gmac1_rgmii_clk &gmac1_rgmii_bus>;
+	pinctrl-names = "default";
+	snps,reset-active-low;
+	snps,reset-delays-us = <0x00 0x4e20 0x186a0>;
+	snps,reset-gpio = <&gpio4 RK_PB3 GPIO_ACTIVE_LOW>;
+	snps,no-vlhash;
+	snps,tso;
+	status = "okay";
+
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+		pause;
+	};
+};
+
+/* ===== UART ===== */
+
+&uart2 {
+	pinctrl-0 = <&uart2m0_xfer>;
+	status = "okay";
+};
+
+/* ===== USB ===== */
+&u2phy0 {
+	status = "okay";
+};
+
+&u2phy0_otg {
+	phy-supply = <&vcc5v0_otg_regulator>;
+	status = "okay";
+};
+
+&u2phy1 {
+	status = "okay";
+};
+
+&u2phy1_otg {
+	phy-supply = <&vcc5v0_host_regulator>;
+	status = "okay";
+};
+
+// usbdp_phy0: phy@fed80000
+&usbdp_phy0 {
+	rockchip,dp-lane-mux = <2 3>;
+	status = "okay";
+
+	u3-port {
+		#phy-cells = <0x00>;
+		maximum-speed = "super-speed";
+		status = "okay";
+	};
+};
+
+// usbdp_phy1: phy@fed90000
+&usbdp_phy1 {
+	rockchip,dp-lane-mux = <2 3>;
+	status = "okay";
+
+	u3-port {
+		#phy-cells = <0x00>;
+		maximum-speed = "super-speed";
+		status = "okay";
+	};
+};
+
+// u2phy2: usb2phy@8000
+&u2phy2 {
+	status = "okay";
+};
+
+&u2phy2_host{
+	phy-supply = <&vcc5v0_host_regulator>;
+	status = "okay";
+};
+
+// usb_host0_xhci: usb@fc000000
+&usb_host0_xhci {
+	dr_mode = "host";
+	status = "okay";
+};
+
+// usb_host0_ehci: usb@fc800000
+&usb_host0_ehci {
+	status = "okay";
+};
+
+// usb_host0_ohci: usb@fc840000
+&usb_host0_ohci {
+	status = "okay";
+};
+
+// u2phy3: usb2phy@c000
+&u2phy3 {
+	status = "okay";
+};
+
+&u2phy3_host{
+	phy-supply = <&vcc5v0_host_regulator>;
+	status = "okay";
+};
+
+// usb_host1_xhci: usb@fc400000
+&usb_host1_xhci {
+	dr_mode = "host";
+	status = "okay";
+};
+
+// usb_host1_ehci: usb@fc880000
+&usb_host1_ehci {
+	status = "okay";
+};
+
+// usb_host1_ohci: usb@fc8c0000
+&usb_host1_ohci {
+	status = "okay";
+};
+
+/* ===== HDMI / Display ===== */
+// hdptxphy0: phy@fed60000
+&hdptxphy0 {
+	status = "okay";
+};
+
+// hdmi@fde80000
+&hdmi0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&hdmim0_tx0_cec &hdmim0_tx0_hpd &hdmim0_tx0_scl &hdmim0_tx0_sda>;
+	enable-gpios = <&gpio4 RK_PB1 GPIO_ACTIVE_HIGH>;
+	status = "okay";
+};
+
+&hdmi0_in {
+	hdmi0_in_vp0: endpoint {
+		remote-endpoint = <&vp0_out_hdmi0>;
+	};
+};
+
+&hdmi0_out {
+	hdmi0_out_con: endpoint {
+		remote-endpoint = <&hdmi0_con_in>;
+	};
+};
+
+&i2s5_8ch {
+	status = "okay";
+};
+
+&hdmi0_sound {
+	status = "okay";
+};
+
+&vop_mmu {
+	status = "okay";
+};
+
+&vop {
+	status = "okay";
+
+	ports {
+		port@1 {
+			/delete-node/ endpoint@8;
+		};
+	};
+};
+
+&vp0 {
+	/* v18 already carries HDMI0 on VP0 endpoint@2; merge that node instead
+	 * of creating a second graph endpoint. */
+	vp0_out_hdmi0: endpoint@2 {
+		reg = <2>;
+		remote-endpoint = <&hdmi0_in_vp0>;
+	};
+};
+
+/* ===== Other ===== */
+
+// saradc: adc@fec10000
+&saradc {
+	vref-supply = <&avcc_1v8_s0>;
+	status = "okay";
+};
+
+// tsadc: tsadc@fec00000
+&tsadc {
+	status = "okay";
+};
+
+// dfi@fe060000
+&dfi {
+	status = "okay";
+};
+
+/* ===== Switch ===== */
+&mdio0 {
+	status = "okay";
+
+	yt9215_0: switch@1d {
+		compatible = "motorcomm,yt9215";
+		reg = <0x1d>;
+		dsa,member = <1 0>;
+		motorcomm,bdy-g98-led-profile;
+
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			sw1phy1: phy@1 { reg = <1>; };
+			sw1phy2: phy@2 { reg = <2>; };
+			sw1phy3: phy@3 { reg = <3>; };
+			sw1phy4: phy@4 { reg = <4>; };
+		};
+
+		ethernet-ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ethernet-port@1 {
+				reg = <0x01>;
+				label = "lan5";
+				phy-mode = "internal";
+				phy-handle = <&sw1phy1>;
+			};
+
+			ethernet-port@2 {
+				reg = <0x02>;
+				label = "lan6";
+				phy-mode = "internal";
+				phy-handle = <&sw1phy2>;
+			};
+
+			ethernet-port@3 {
+				reg = <0x03>;
+				label = "lan7";
+				phy-mode = "internal";
+				phy-handle = <&sw1phy3>;
+			};
+
+			ethernet-port@4 {
+				reg = <0x04>;
+				label = "lan8";
+				phy-mode = "internal";
+				phy-handle = <&sw1phy4>;
+			};
+
+			ethernet-port@9 {
+				reg = <0x09>;
+				ethernet = <&gmac0>;
+				phy-mode = "rgmii-rxid";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+					pause;
+				};
+			};
+		};
+	};
+};
+
+&mdio1 {
+	status = "okay";
+
+	yt9215_1: switch@1d {
+		compatible = "motorcomm,yt9215";
+		reg = <0x1d>;
+		dsa,member = <0 0>;
+		motorcomm,bdy-g98-led-profile;
+
+		mdio {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			sw0phy1: phy@1 { reg = <1>; };
+			sw0phy2: phy@2 { reg = <2>; };
+			sw0phy3: phy@3 { reg = <3>; };
+			sw0phy4: phy@4 { reg = <4>; };
+		};
+
+		ethernet-ports {
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+
+			ethernet-port@1 {
+				reg = <0x01>;
+				label = "lan1";
+				phy-mode = "internal";
+				phy-handle = <&sw0phy1>;
+			};
+
+			ethernet-port@2 {
+				reg = <0x02>;
+				label = "lan2";
+				phy-mode = "internal";
+				phy-handle = <&sw0phy2>;
+			};
+
+			ethernet-port@3 {
+				reg = <0x03>;
+				label = "lan3";
+				phy-mode = "internal";
+				phy-handle = <&sw0phy3>;
+			};
+
+			ethernet-port@4 {
+				reg = <0x04>;
+				label = "lan4";
+				phy-mode = "internal";
+				phy-handle = <&sw0phy4>;
+			};
+
+			ethernet-port@9 {
+				reg = <0x09>;
+				ethernet = <&gmac1>;
+				phy-mode = "rgmii-rxid";
+
+				fixed-link {
+					speed = <1000>;
+					full-duplex;
+					pause;
+				};
+			};
+		};
+  };
+};

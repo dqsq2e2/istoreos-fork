@@ -1,0 +1,36 @@
+From 2d7e5c7d9e0d6d1a3f9f4e6f8a7b6c5d4e3f2a1b Mon Sep 17 00:00:00 2001
+From: BDY G98 maintainers <devnull@example.invalid>
+Date: Tue, 18 Aug 2026 00:00:00 +0800
+Subject: [PATCH] net: flow offload: carry skip_sw in 6.12 common offload
+
+The YT921x driver uses the flow_cls_common_offload::skip_sw member that
+was added after Linux 6.12. Keep the 6.12 API source-compatible and retain
+the original TC skip_sw semantics for DSA hardware offload drivers.
+
+---
+ include/net/flow_offload.h | 1 +
+ include/net/pkt_cls.h      | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/include/net/flow_offload.h b/include/net/flow_offload.h
+--- a/include/net/flow_offload.h
++++ b/include/net/flow_offload.h
+@@ -684,6 +684,7 @@ struct flow_cls_common_offload {
+ 	u32 chain_index;
+ 	__be16 protocol;
+ 	u32 prio;
++	bool skip_sw;
+ 	struct netlink_ext_ack *extack;
+ };
+ 
+diff --git a/include/net/pkt_cls.h b/include/net/pkt_cls.h
+--- a/include/net/pkt_cls.h
++++ b/include/net/pkt_cls.h
+@@ -753,6 +753,7 @@ tc_cls_common_offload_init(struct flow_cls_common_offload *cls_common,
+ 	cls_common->chain_index = tp->chain->index;
+ 	cls_common->protocol = tp->protocol;
+ 	cls_common->prio = tp->prio >> 16;
++	cls_common->skip_sw = flags & TCA_CLS_FLAGS_SKIP_SW;
+ 	if (tc_skip_sw(flags) || flags & TCA_CLS_FLAGS_VERBOSE)
+ 		cls_common->extack = extack;
+ }

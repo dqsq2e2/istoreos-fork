@@ -1,0 +1,102 @@
+name: Build iStoreOS G98
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - istoreos-25.12
+    paths:
+      - ".github/workflows/build-g98.yml"
+      - "configs/bdy-g98.config"
+      - "package/**"
+      - "target/linux/rockchip/**"
+      - "target/linux/generic/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: g98-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: G98 / RK3588 / Linux 6.12
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential clang flex bison gawk gettext git \
+            libncurses-dev libssl-dev libelf-dev libdw-dev \
+            python3 python3-setuptools python3-pip python3-pyelftools \
+            rsync unzip zlib1g-dev file wget curl time xsltproc \
+            device-tree-compiler squashfs-tools qemu-utils ccache rename \
+            libpython3-dev
+
+      - name: Configure G98 target
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cp configs/bdy-g98.config .config
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig
+          grep -q '^CONFIG_TARGET_rockchip_armv8_DEVICE_bdy_g98=y$' .config
+          grep -q '^CONFIG_PACKAGE_uhttpd=y$' .config
+          grep -q '^CONFIG_PACKAGE_uhttpd-mod-ubus=y$' .config
+          grep -q '^CONFIG_DEFAULT_luci-app-store=y$' .config
+          grep -q '^CONFIG_PACKAGE_u-boot-bdy-g98-rk3588-2410=y$' .config
+
+      - name: Download sources
+        run: make -j4 download
+
+      - name: Build firmware
+        run: make -j"$(nproc)" V=s
+
+      - name: Verify G98 output
+        shell: bash
+        run: |
+          set -euxo pipefail
+          out="bin/targets/rockchip/armv8"
+          test -d "$out"
+          find "$out" -maxdepth 1 -type f -printf '%f %s bytes\n' | sort
+
+          manifest=$(find "$out" -maxdepth 1 -type f -name '*.manifest' | head -n 1)
+          test -n "$manifest"
+          grep -q 'base-files' "$manifest"
+          grep -q 'istoreos-files' "$manifest"
+          grep -q 'uhttpd' "$manifest"
+          grep -q 'uhttpd-mod-ubus' "$manifest"
+          grep -q 'u-boot-bdy-g98-rk3588-2410' "$manifest"
+
+          grep -q 'hdmi0' target/linux/rockchip/dts/rk3588/rk3588-bdy-g98.dts
+          grep -q 'lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8' \
+            target/linux/rockchip/armv8/base-files/etc/board.d/02_network
+          grep -q 'bdy-g98-rk3588-2410' target/linux/rockchip/image/legacy.mk
+
+          rootfs=$(find "$out" -maxdepth 1 -type f -name '*rootfs*.squashfs' | head -n 1 || true)
+          if [ -n "$rootfs" ]; then
+            unsquashfs -ll "$rootfs" > /tmp/g98-rootfs.list
+            grep -q 'bin/board_detect' /tmp/g98-rootfs.list
+            grep -q 'bin/config_generate' /tmp/g98-rootfs.list
+            grep -q 'bin/ipcalc.sh' /tmp/g98-rootfs.list
+            grep -q 'etc/init.d/uhttpd' /tmp/g98-rootfs.list
+            grep -q 'usr/sbin/uhttpd' /tmp/g98-rootfs.list
+          fi
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: istoreos-g98-${{ github.sha }}
+          path: bin/targets/rockchip/armv8/*
+          if-no-files-found: error
+          retention-days: 14

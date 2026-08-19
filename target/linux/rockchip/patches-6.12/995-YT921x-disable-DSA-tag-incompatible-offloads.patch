@@ -1,0 +1,142 @@
+From: BDY-G98 port <noreply@example.invalid>
+Date: Tue, 18 Aug 2026 00:00:00 +0800
+Subject: [PATCH] net: dsa: yt921x: disable offloads incompatible with the tag
+
+The YT921x DSA protocol inserts an eight-byte tag on the CPU-facing link.
+The RK3588 stmmac TSO path can segment packets after the tag has been
+inserted, corrupting the frame.  Keep the hardware datapath usable while
+turning off TSO, GSO and GRO on the conduit after DSA registration.
+
+The conduit netdev is not guaranteed to be fully initialized when the MDIO
+switch probes, so the change is deferred and the conduit feature callback is
+wrapped to prevent stmmac from restoring the unsafe offloads.
+
+Signed-off-by: BDY-G98 port <noreply@example.invalid>
+---
+ Documentation/devicetree/bindings/net/dsa/motorcomm,yt921x.yaml |  5 +++
+ drivers/net/dsa/yt921x.c                                        | 59 ++++++++++++++++++++++++++++-
+ drivers/net/dsa/yt921x.h                                        |  4 ++
+ 3 files changed, 67 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/devicetree/bindings/net/dsa/motorcomm,yt921x.yaml b/Documentation/devicetree/bindings/net/dsa/motorcomm,yt921x.yaml
+--- a/Documentation/devicetree/bindings/net/dsa/motorcomm,yt921x.yaml
++++ b/Documentation/devicetree/bindings/net/dsa/motorcomm,yt921x.yaml
+@@ -34,6 +34,11 @@ properties:
+   reset-gpios:
+     maxItems: 1
+ 
++  motorcomm,bdy-g98-led-profile:
++    type: boolean
++    description: |
++      Use the BDY-G98 parallel LED output profile.
++
+   mdio:
+     $ref: /schemas/net/mdio.yaml#
+     unevaluatedProperties: false
+diff --git a/drivers/net/dsa/yt921x.c b/drivers/net/dsa/yt921x.c
+--- a/drivers/net/dsa/yt921x.c
++++ b/drivers/net/dsa/yt921x.c
+@@ -19,6 +19,7 @@
+ #include <linux/of.h>
+ #include <linux/of_mdio.h>
+ #include <linux/of_net.h>
++#include <linux/rtnetlink.h>
+ #include <linux/sort.h>
+ 
+ #include <net/dsa.h>
+@@ -5054,6 +5055,49 @@ static const struct dsa_switch_ops yt921x_dsa_switch_ops = {
+ 	.setup			= yt921x_dsa_setup,
+ };
+ 
++static netdev_features_t
++yt921x_conduit_fix_features(struct net_device *dev,
++			    netdev_features_t features)
++{
++	/* The eight-byte YT921x tag is incompatible with hardware TSO. */
++	features &= ~(NETIF_F_TSO | NETIF_F_TSO6 |
++		      NETIF_F_GSO | NETIF_F_GRO);
++	return features;
++}
++
++static void yt921x_disable_tso_work(struct work_struct *work)
++{
++	struct yt921x_priv *priv = container_of(work, struct yt921x_priv,
++						 disable_tso_work.work);
++	struct dsa_switch *ds = &priv->ds;
++
++	for (int port = 0; port < ds->num_ports; port++) {
++		struct dsa_port *dp = dsa_to_port(ds, port);
++
++		if (dp->type != DSA_PORT_TYPE_CPU || !dp->conduit)
++			continue;
++
++		priv->conduit = dp->conduit;
++		priv->orig_conduit_ops = priv->conduit->netdev_ops;
++		memcpy(&priv->conduit_ops, priv->orig_conduit_ops,
++		       sizeof(priv->conduit_ops));
++		priv->conduit_ops.ndo_fix_features =
++			yt921x_conduit_fix_features;
++		WRITE_ONCE(priv->conduit->netdev_ops, &priv->conduit_ops);
++
++		rtnl_lock();
++		dp->conduit->hw_features &=
++			~(NETIF_F_TSO | NETIF_F_TSO6 |
++			  NETIF_F_GSO | NETIF_F_GRO);
++		dp->conduit->wanted_features &=
++			~(NETIF_F_TSO | NETIF_F_TSO6 |
++			  NETIF_F_GSO | NETIF_F_GRO);
++		netdev_update_features(dp->conduit);
++		rtnl_unlock();
++		break;
++	}
++}
++
+ static void yt921x_mdio_shutdown(struct mdio_device *mdiodev)
+ {
+ 	struct yt921x_priv *priv = mdiodev_get_drvdata(mdiodev);
+@@ -5086,5 +5130,9 @@ static void yt921x_mdio_remove(struct mdio_device *mdiodev)
+ 	if (!priv)
+ 		return;
+ 
++	cancel_delayed_work_sync(&priv->disable_tso_work);
++	if (priv->orig_conduit_ops)
++		WRITE_ONCE(priv->conduit->netdev_ops, priv->orig_conduit_ops);
++
+ 	for (size_t i = ARRAY_SIZE(priv->ports); i-- > 0; ) {
+ 		struct yt921x_port *pp = &priv->ports[i];
+@@ -5116,6 +5164,7 @@ static int yt921x_mdio_probe(struct mdio_device *mdiodev)
+ 	struct device *dev = &mdiodev->dev;
+ 	struct yt921x_reg_mdio *mdio;
+ 	struct yt921x_priv *priv;
+ 	struct dsa_switch *ds;
++	int res;
+ 
+ 	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
+@@ -5156,5 +5205,13 @@ static int yt921x_mdio_probe(struct mdio_device *mdiodev)
+ 
+ 	mdiodev_set_drvdata(mdiodev, priv);
+ 
+-	return dsa_register_switch(ds);
++	res = dsa_register_switch(ds);
++	if (res)
++		return res;
++
++	/* The conduit may not be ready during probe; defer the feature change. */
++	INIT_DELAYED_WORK(&priv->disable_tso_work, yt921x_disable_tso_work);
++	schedule_delayed_work(&priv->disable_tso_work, HZ * 2);
++
++	return 0;
+ }
+diff --git a/drivers/net/dsa/yt921x.h b/drivers/net/dsa/yt921x.h
+--- a/drivers/net/dsa/yt921x.h
++++ b/drivers/net/dsa/yt921x.h
+@@ -991,5 +991,9 @@ struct yt921x_priv {
+ 	DECLARE_BITMAP(meters_map, YT921X_METER_NUM);
+ 
++	struct delayed_work disable_tso_work;
++	struct net_device *conduit;
++	const struct net_device_ops *orig_conduit_ops;
++	struct net_device_ops conduit_ops;
+ 	u8 acl_masks[YT921X_ACL_BLK_NUM];
+ 	struct yt921x_acl_blk *acl_blks[YT921X_ACL_BLK_NUM];
+ };
