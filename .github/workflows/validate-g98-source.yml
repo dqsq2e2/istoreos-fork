@@ -38,7 +38,7 @@ jobs:
           grep -qx 'CONFIG_TARGET_rockchip_armv8_DEVICE_bdy_g98=y' "$cfg"
           grep -qx 'CONFIG_PACKAGE_luci-mod-dashboard=y' "$cfg"
           grep -qx 'CONFIG_PACKAGE_firewall4=y' "$cfg"
-          grep -qx 'CONFIG_PACKAGE_nftables=y' "$cfg"
+          grep -qx 'CONFIG_PACKAGE_nftables-json=y' "$cfg"
           grep -q 'eth_order = "0003:31:00.0,0002:21:00.0,fe1b0000.ethernet,fe1c0000.ethernet";' "$dts"
           test "$(grep -c 'realtek,led-data' "$dts")" -eq 2
           test "$(grep -c 'motorcomm,bdy-g98-led-profile' "$dts")" -eq 2
