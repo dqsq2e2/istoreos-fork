@@ -118,7 +118,16 @@ jobs:
           for image in "$out"/*sysupgrade.img.gz; do
             test -f "$image"
             raw=$(mktemp)
-            gzip -dc "$image" > "$raw"
+            gzip_log=$(mktemp)
+            gzip_status=0
+            gzip -dc -- "$image" > "$raw" 2>"$gzip_log" || gzip_status=$?
+            if [ "$gzip_status" -ne 0 ]; then
+              # append-metadata deliberately adds fwtool data after the gzip
+              # stream, which GNU gzip reports as exit 2 after decoding it.
+              test "$gzip_status" -eq 2
+              grep -q 'trailing garbage ignored' "$gzip_log"
+            fi
+            rm -f "$gzip_log"
             embedded_idbloader_sha=$(dd if="$raw" bs=1 skip="$idbloader_offset" count="$idbloader_size" status=none | sha256sum | awk '{print $1}')
             embedded_uboot_itb_sha=$(dd if="$raw" bs=1 skip="$uboot_itb_offset" count="$uboot_itb_size" status=none | sha256sum | awk '{print $1}')
             rm -f "$raw"
