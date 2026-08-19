@@ -13,7 +13,7 @@ on:
       - "target/linux/generic/**"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: g98-${{ github.ref }}
@@ -99,7 +99,32 @@ jobs:
           grep -q 'istoreos-files' "$manifest"
           grep -q 'uhttpd' "$manifest"
           grep -q 'uhttpd-mod-ubus' "$manifest"
-          grep -q 'u-boot-bdy-g98-rk3588-2410' "$manifest"
+
+          # The G98 U-Boot package is hidden from the rootfs manifest.  Verify
+          # the two hardware-verified 2410 artifacts at their actual image
+          # offsets instead of expecting a package entry that cannot exist.
+          idbloader=package/boot/uboot-rockchip-g98/files/bdy-g98-istoreos-2024.10-idbloader.img
+          uboot_itb=package/boot/uboot-rockchip-g98/files/BDY-G98-u-boot-2024.10-full-v21.itb
+          test -f "$idbloader"
+          test -f "$uboot_itb"
+          idbloader_size=$(stat -c '%s' "$idbloader")
+          uboot_itb_size=$(stat -c '%s' "$uboot_itb")
+          idbloader_sha=$(sha256sum "$idbloader" | awk '{print $1}')
+          uboot_itb_sha=$(sha256sum "$uboot_itb" | awk '{print $1}')
+          test "$idbloader_sha" = aaa9f37a945e7e0d4c4f18eab68431e32c5a78ccbe49672f55c058d61e2f275d
+          test "$uboot_itb_sha" = ba0380db961498ce1311c2e84bb082151c5a66fa7ed82e669d94882dbc510033
+          idbloader_offset=$((64 * 512))
+          uboot_itb_offset=$((16384 * 512))
+          for image in "$out"/*sysupgrade.img.gz; do
+            test -f "$image"
+            raw=$(mktemp)
+            gzip -dc "$image" > "$raw"
+            embedded_idbloader_sha=$(dd if="$raw" bs=1 skip="$idbloader_offset" count="$idbloader_size" status=none | sha256sum | awk '{print $1}')
+            embedded_uboot_itb_sha=$(dd if="$raw" bs=1 skip="$uboot_itb_offset" count="$uboot_itb_size" status=none | sha256sum | awk '{print $1}')
+            rm -f "$raw"
+            test "$embedded_idbloader_sha" = "$idbloader_sha"
+            test "$embedded_uboot_itb_sha" = "$uboot_itb_sha"
+          done
 
           grep -q 'hdmi0' target/linux/rockchip/dts/rk3588/rk3588-bdy-g98.dts
           grep -q 'lan1 lan2 lan3 lan4 lan5 lan6 lan7 lan8' \
@@ -123,3 +148,20 @@ jobs:
           path: bin/targets/rockchip/armv8/*
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release
+        if: success()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          out=bin/targets/rockchip/armv8
+          tag="g98-${GITHUB_RUN_NUMBER}"
+          mapfile -d '' release_files < <(find "$out" -maxdepth 1 -type f -print0 | sort -z)
+          test "${#release_files[@]}" -gt 0
+          gh release create "$tag" "${release_files[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "iStoreOS G98 ${{ github.sha }}" \
+            --notes "BDY G98 RK3588 iStoreOS firmware, Linux 6.12, verified U-Boot 2024.10 (2410)."
